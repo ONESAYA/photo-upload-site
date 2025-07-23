@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>写真アップロード</title>
+    <style>
+        /* ここにCSSを追加してスタイルを整える */
+        body { font-family: sans-serif; margin: 20px; }
+        div { margin-bottom: 10px; }
+        input[type="text"], select, input[type="file"], button {
+            padding: 8px;
+            margin-top: 5px;
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            opacity: 0.8;
+        }
+        #uploadStatus {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>写真アップロード</h1>
+    <div>
+        <label for="name">名前:</label>
+        <input type="text" id="name" required>
+    </div>
+    <div>
+        <label for="event">イベントを選択:</label>
+        <select id="event" required>
+            <option value="イベント4">7月27日_ワンダーフェスティバル</option>
+            <option value="イベント1">8月1〜3日_コスプレサミット</option>
+            <option value="イベント2">8月16日_コミックマーケット106（1日目）</option>
+            <option value="イベント3">8月17日_コミックマーケット106（2日目）</option>
+            </select>
+    </div>
+    <div>
+        <label for="photos">写真ファイル:</label>
+        <input type="file" id="photos" multiple accept="image/*" required>
+    </div>
+    <button onclick="uploadFiles()">送信</button>
+    <div id="uploadStatus"></div>
+
+    <script>
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw_xlLuTzVORKYAthR98hazriS6L1kAalMaD17gSKW1BG0BxwAIX98LkT6Of-b3kU1e/exec'; // ★ここにApps ScriptのWebアプリURLを設定
+
+        async function uploadFiles() {
+            const name = document.getElementById('name').value;
+            const event = document.getElementById('event').value;
+            const files = document.getElementById('photos').files;
+            const statusDiv = document.getElementById('uploadStatus');
+
+            if (!name || !event || files.length === 0) {
+                statusDiv.textContent = '名前、イベント、写真を選択してください。';
+                return;
+            }
+
+            statusDiv.textContent = 'アップロードを開始します...';
+
+            const uploadId = Date.now().toString(); // ユニークなアップロードIDを生成
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const chunkSize = 40 * 1024 * 1024; // 40MB
+                let offset = 0;
+                let chunkIndex = 0;
+
+                while (offset < file.size) {
+                    const chunk = file.slice(offset, offset + chunkSize);
+                    const formData = new FormData();
+                    formData.append('name', name);
+                    formData.append('event', event);
+                    formData.append('uploadId', uploadId);
+                    formData.append('fileName', file.name);
+                    formData.append('chunkIndex', chunkIndex);
+                    formData.append('totalChunks', Math.ceil(file.size / chunkSize));
+                    formData.append('chunk', chunk);
+
+                    statusDiv.textContent = `ファイルをアップロード中: ${file.name} (${chunkIndex + 1}/${Math.ceil(file.size / chunkSize)} チャンク)`;
+
+                    try {
+                        const response = await fetch(SCRIPT_URL, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const result = await response.text();
+                        console.log(`チャンク ${chunkIndex} の結果:`, result);
+                        if (result.includes('エラー')) {
+                            statusDiv.textContent = `エラーが発生しました: ${result}`;
+                            return;
+                        }
+                    } catch (error) {
+                        statusDiv.textContent = `アップロードエラー: ${error.message}`;
+                        console.error('アップロードエラー:', error);
+                        return;
+                    }
+                    offset += chunkSize;
+                    chunkIndex++;
+                }
+            }
+
+            // 全チャンクの送信が完了したら、Apps ScriptにZIP化を指示
+            statusDiv.textContent = 'ファイル処理を完了しています...';
+            try {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'finalize',
+                        name: name,
+                        event: event,
+                        uploadId: uploadId
+                    })
+                });
+                const result = await response.text();
+                statusDiv.textContent = result;
+                console.log('最終処理結果:', result);
+            } catch (error) {
+                statusDiv.textContent = `最終処理エラー: ${error.message}`;
+                console.error('最終処理エラー:', error);
+            }
+        }
+    </script>
+</body>
+</html>
